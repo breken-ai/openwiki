@@ -346,6 +346,51 @@ describe("validateWikiInternalLinks", () => {
     expect(report.issuesFound).toBe(0);
   });
 
+  test("accepts directory links written without a trailing slash", async () => {
+    const { backend, rootDir } = await setupWiki();
+    await mkdir(path.join(rootDir, "src/agent"), { recursive: true });
+    await writeFile(path.join(rootDir, "src/agent/index.ts"), "export {};\n");
+    await backend.write("/openwiki/architecture/agents.md", "# Agents\n");
+    await backend.write(
+      "/openwiki/page.md",
+      [
+        "- [agent source](../src/agent)",
+        "- [architecture pages](architecture)",
+        "- [anchored folder](architecture#top)",
+      ].join("\n"),
+    );
+    const edit = vi.spyOn(backend, "edit");
+
+    const report = await validateWikiInternalLinks(backend, "repository");
+
+    expect(report).toMatchObject({ issuesFound: 0, stampedFiles: [] });
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  test("still stamps missing paths written without a trailing slash", async () => {
+    const { backend, rootDir } = await setupWiki();
+    await backend.write("/openwiki/page.md", "- [gone](../src/removed)\n");
+
+    const report = await validateWikiInternalLinks(backend, "repository");
+
+    expect(report.issuesFound).toBe(1);
+    await expect(
+      readFile(path.join(rootDir, "openwiki/page.md"), "utf8"),
+    ).resolves.toContain('file "../src/removed" does not exist');
+  });
+
+  test("stamps directory links to missing directories", async () => {
+    const { backend, rootDir } = await setupWiki();
+    await backend.write("/openwiki/page.md", "- [agent](agent/)\n");
+
+    const report = await validateWikiInternalLinks(backend, "repository");
+
+    expect(report.issuesFound).toBe(1);
+    await expect(
+      readFile(path.join(rootDir, "openwiki/page.md"), "utf8"),
+    ).resolves.toContain('directory "agent/" does not exist');
+  });
+
   test("clamps ../-escaping links to the repo root, never the host filesystem", async () => {
     const { backend, rootDir } = await setupWiki();
     // The host has a real /etc/passwd. A link with enough `..` to try to reach

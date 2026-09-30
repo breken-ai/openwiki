@@ -267,16 +267,23 @@ async function validateLink(
     };
   }
 
-  const isDirectory = resolvedPath.endsWith("/");
-  const targetPath = isDirectory
+  const hasTrailingSlash = resolvedPath.endsWith("/");
+  const targetPath = hasTrailingSlash
     ? resolvedPath.replace(/\/+$/u, "")
     : resolvedPath;
 
-  if (!(await pathExists(backend, targetPath, isDirectory))) {
+  // GitHub and local viewers follow a directory link with or without a
+  // trailing slash, so a slash-less target that is not a readable file is
+  // still valid when it names an existing directory.
+  const isFile =
+    !hasTrailingSlash && (await pathExists(backend, targetPath, false));
+  const isDirectory = !isFile && (await pathExists(backend, targetPath, true));
+
+  if (!isFile && !isDirectory) {
     return {
       href,
       line,
-      message: isDirectory
+      message: hasTrailingSlash
         ? `directory "${linkPath}" does not exist`
         : `file "${linkPath}" does not exist`,
       sourcePath,
@@ -489,6 +496,10 @@ function isExternalHref(href: string): boolean {
 /**
  * True when a wiki-absolute path resolves to an existing file or directory on
  * the backend. Any read error is treated as "does not exist".
+ *
+ * Directories are confirmed through their parent's listing: backends may
+ * answer `ls` on a missing path with an empty listing rather than an error,
+ * so listing the target itself cannot tell "empty" from "absent".
  */
 async function pathExists(
   backend: BackendProtocolV2,
@@ -497,8 +508,17 @@ async function pathExists(
 ): Promise<boolean> {
   try {
     if (isDirectory) {
-      const result = await backend.ls(targetPath);
-      return !result.error;
+      if (targetPath === "/") {
+        return true;
+      }
+      const name = path.posix.basename(targetPath);
+      const result = await backend.ls(path.posix.dirname(targetPath));
+      return (
+        !result.error &&
+        (result.files ?? []).some(
+          (entry) => entry.is_dir === true && entryName(entry) === name,
+        )
+      );
     }
 
     const result = await backend.readRaw(targetPath);
