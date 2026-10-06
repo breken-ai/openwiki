@@ -294,6 +294,23 @@ describe("validateWikiInternalLinks", () => {
     expect(report.stampedFiles).toEqual([]);
   });
 
+  test("keeps inline code text in heading anchors", async () => {
+    const { backend } = await setupWiki();
+    await backend.write(
+      "/openwiki/quickstart.md",
+      "See [foo](./overview.md#use-foo).\n",
+    );
+    await backend.write(
+      "/openwiki/overview.md",
+      "# Overview\n\n## Use `foo`\n",
+    );
+
+    const report = await validateWikiInternalLinks(backend, "repository");
+
+    expect(report.issuesFound).toBe(0);
+    expect(report.stampedFiles).toEqual([]);
+  });
+
   test("accepts anchors on non-ASCII (unicode) headings", async () => {
     const { backend } = await setupWiki();
     await backend.write(

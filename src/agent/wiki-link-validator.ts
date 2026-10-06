@@ -360,11 +360,12 @@ async function collectMarkdownFiles(
 /**
  * Splits a document into lines with code blanked out, so link and heading
  * syntax that only appears inside code is never treated as Markdown. Lines of
- * a fenced code block (fences included) become empty strings, and inline code
- * spans are replaced by spaces of the same length, which keeps line numbers and
- * column positions stable for the image-link check and for stamping.
+ * a fenced code block (fences included) become empty strings. Inline code spans
+ * can be replaced by spaces of the same length, which keeps line numbers and
+ * column positions stable for the image-link check and for stamping. Heading
+ * extraction preserves inline code text because it contributes to anchor slugs.
  */
-function maskMarkdownCode(content: string): string[] {
+function maskMarkdownCode(content: string, maskInlineCode = true): string[] {
   let fence: { character: string; length: number } | undefined;
 
   return content.split(/\r?\n/u).map((line) => {
@@ -383,7 +384,9 @@ function maskMarkdownCode(content: string): string[] {
       fence = { character: marker[0], length: marker.length };
       return "";
     }
-    return line.replace(INLINE_CODE_PATTERN, (span) => " ".repeat(span.length));
+    return maskInlineCode
+      ? line.replace(INLINE_CODE_PATTERN, (span) => " ".repeat(span.length))
+      : line;
   });
 }
 
@@ -415,7 +418,7 @@ function extractMarkdownLinks(
  */
 function extractHeadings(content: string): string[] {
   const headings: string[] = [];
-  for (const line of maskMarkdownCode(content)) {
+  for (const line of maskMarkdownCode(content, false)) {
     const match = HEADING_PATTERN.exec(line);
     if (match) {
       headings.push(match[2]);
